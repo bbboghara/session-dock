@@ -1,0 +1,15 @@
+{
+  "name": "session-dock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Start, resume and restart Claude Code sessions in real terminal windows on your Linux desktop, from any browser.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}
