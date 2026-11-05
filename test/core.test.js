@@ -603,6 +603,35 @@ test('a process that merely reused a window\'s or session\'s process ID is not m
   }
 });
 
+test('a session reporting idle with a Bash tool command still running counts as busy', async () => {
+  const dir = tmp();
+  const sessionsDir = path.join(dir, 'sessions');
+  fs.mkdirSync(sessionsDir);
+  const bin = path.join(dir, 'claude');
+  // A Claude with one long-lived child (like an MCP server) and, if asked, a Bash tool shell as well.
+  fs.writeFileSync(bin, `#!/bin/bash
+sleep 30 &
+if [ "$1" = command ]; then bash -c 'true /x/shell-snapshots/snapshot-bash-1.sh; sleep 30; true' & fi
+wait
+`, { mode: 0o755 });
+  const check = async (arg, status) => {
+    const proc = spawn(bin, arg ? [arg] : [], { stdio: 'ignore', detached: true });
+    try {
+      await new Promise((r) => proc.once('spawn', r));
+      await new Promise((r) => setTimeout(r, 150));
+      fs.writeFileSync(path.join(sessionsDir, `${proc.pid}.json`), JSON.stringify({ pid: proc.pid, sessionId: 's', cwd: dir, status, kind: 'interactive' }));
+      return listActive({ sessionsDir, windowsDir: path.join(dir, 'none'), claudeBin: bin }).sessions[0].status;
+    } finally {
+      process.kill(-proc.pid);
+      fs.rmSync(path.join(sessionsDir, `${proc.pid}.json`));
+    }
+  };
+  assert.equal(await check(null, 'idle'), 'idle', 'an ordinary child process changes nothing');
+  assert.equal(await check('command', 'idle'), 'busy');
+  assert.equal(await check('command', undefined), 'busy', 'also when Claude reports no status at all');
+  assert.equal(await check('command', 'waiting'), 'waiting', 'a question for you stays a question');
+});
+
 test('session files only count under their own process ID, and script-run Claudes are left out', async () => {
   const dir = tmp();
   const sessionsDir = path.join(dir, 'sessions');

@@ -26,7 +26,7 @@ The windows are ordinary terminal windows on your desktop, not hidden background
 - **Same-window restarts.** A small wrapper (`bin/claude-window.sh`) runs Claude in a loop. To restart, Session Dock leaves an instruction for the wrapper and stops Claude; the wrapper then resumes the same conversation on the newest Claude. Sessions started some other way are stopped and reopened in a new window.
 - **Finding sessions.** Claude Code writes `~/.claude/sessions/<pid>.json` for each running session and keeps conversations in `~/.claude/projects/`. Session Dock reads these files. It acts on a process only if the process is still alive and its start time matches, so a reused process ID can't point it at the wrong program. (Very old Claude versions don't record a start time; then the process must at least be a Claude.)
 - **Safety rules, enforced on the server:**
-  - Restart only when Claude reports **idle**.
+  - Restart only when Claude is **idle**. A command still running in the background counts as busy, because stopping Claude would stop it too. Session Dock checks for one itself as well as asking Claude.
   - Close asks first if Claude is busy.
   - Resume refuses a conversation that is already running.
   - Paths can't leave the folder you allow.

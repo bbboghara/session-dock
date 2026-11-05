@@ -659,7 +659,7 @@ function sheetRestart(pid) {
       <div class="center"><div class="result-icon warn">${icon('alert')}</div>
       <h2>Not idle right now</h2>
       <p>${s.status === 'busy'
-        ? `<strong>${esc(s.name)}</strong> is working. Restart is only allowed when Claude is idle. Try again when it finishes.`
+        ? `<strong>${esc(s.name)}</strong> is working, or a command it started is still running, and restarting would stop it. Try again when it finishes.`
         : `<strong>${esc(s.name)}</strong> is waiting for an answer (for example a permission question). Answer it in the Claude app, or use Close.`}</p></div>
       <div class="sheet-actions"><button class="btn block" data-act="sheet-close">OK</button></div>`);
   }
