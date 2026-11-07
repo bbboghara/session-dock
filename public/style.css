@@ -335,6 +335,16 @@ main.view { padding: 12px 16px calc(var(--tabbar-h) + 24px + env(safe-area-inset
 .session-title span:first-child { overflow-wrap: anywhere; }
 .session-prompt { font-size: 13.5px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .session-when { font-size: 12px; color: var(--faint); }
+.running-head { flex-wrap: wrap; }
+.cl-version { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.cl-version h3 { font-size: 17px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; }
+.cl-label { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.cl-list { margin: 0 0 10px; padding-left: 18px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.cl-list li + li { margin-top: 7px; }
+.cl-list code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-3); padding: 1px 4px; border-radius: 4px; }
+.sheet .cl-none { font-size: 13.5px; }
+.sheet .cl-foot { margin-top: 16px; }
+details.other.cl-all { margin-top: 0; border-top: 0; padding-top: 0; }
 details.other { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
 details.other summary { cursor: pointer; font-weight: 600; color: var(--muted); padding: 6px 0 10px; list-style: none; display: flex; align-items: center; gap: 8px; }
 details.other summary::-webkit-details-marker { display: none; }

@@ -35,6 +35,7 @@ const store = {
 const isAndroid = /Android/i.test(navigator.userAgent);
 // Remote Control sessions open in the Claude app, or at claude.ai/code in a browser.
 const CLAUDE_WEB = 'https://claude.ai/code';
+const CLAUDE_CHANGELOG = 'https://code.claude.com/docs/en/changelog';
 const CLAUDE_APP_INTENT = `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.anthropic.claude;S.browser_fallback_url=${encodeURIComponent(CLAUDE_WEB)};end`;
 
 function tilde(p) {
@@ -643,9 +644,56 @@ function renderRunning() {
   v.innerHTML = `
     <div class="running-head">
       <span class="ver">Installed: <b>Claude ${esc(a.installedVersion || '?')}</b></span>
+      <button class="btn small" data-act="changelog">${icon('info')}What's new</button>
       ${outdated.length ? `<button class="btn small" data-act="restart-outdated">${icon('restart')}Restart outdated (${outdated.length})</button>` : ''}
     </div>
     ${a.sessions.length || stuck.length ? `<ul class="card-list">${stuckCards}${cards}</ul>` : '<p class="empty">No Claude sessions are running.<br>Start one from the Folders tab.</p>'}`;
+}
+
+// ---------- what's new ----------
+/** Changelog text is not ours: escape it all, then allow only code spans. Links keep their words but not their address. */
+const changeText = (t) => esc(t).replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/`([^`]+)`/g, '<code>$1</code>');
+const changeList = (items) => `<ul class="cl-list">${items.map((i) => `<li>${changeText(i.text)}</li>`).join('')}</ul>`;
+
+function versionBlock(v) {
+  const notable = v.items.filter((i) => i.notable);
+  const shortlist = notable.length
+    ? `<h4 class="cl-label">Worth a look</h4>${changeList(notable)}`
+    : '<p class="cl-none">Nothing here matched the shortlist.</p>';
+  const all = `<details class="other cl-all"><summary>${icon('chevron')}All ${plural(v.items.length, 'change')}</summary>${changeList(v.items)}</details>`;
+  if (!v.missing) {
+    return `<details class="other cl-old"><summary>${icon('chevron')}v${esc(v.version)} · your sessions have this</summary>${shortlist}${all}</details>`;
+  }
+  return `<section class="cl-version">
+      <h3>v${esc(v.version)} <span class="pill warn">${v.missing === 1 ? "1 session doesn't" : `${v.missing} sessions don't`} have this</span></h3>
+      ${shortlist}${all}
+    </section>`;
+}
+
+async function sheetChangelog() {
+  openSheet('<div class="progress"><div class="spinner"></div><p>Loading what\'s new…</p></div>');
+  let data;
+  try {
+    data = await api('GET', 'api/changelog');
+  } catch (e) {
+    return errorSheet(e);
+  }
+  if (!sheetOpen) return;
+  const old = state.active ? state.active.sessions.filter((s) => s.outdated).length : 0;
+  const intro = old
+    ? `${old === 1 ? '1 session runs' : `${old} sessions run`} an older Claude, and ${old === 1 ? 'gets' : 'get'} these changes on restart. If nothing here matters to you, it can wait.`
+    : 'All your sessions are on the installed Claude.';
+  setSheet(`
+    <h2>What's new in Claude Code</h2>
+    <p>${data.changes.length ? intro : "Claude's changelog couldn't be read, and it couldn't be fetched either."}</p>
+    ${data.behind && data.installedVersion ? `<p class="cl-none">Notes for v${esc(data.installedVersion)} aren't available yet.</p>` : ''}
+    ${data.changes.map(versionBlock).join('')}
+    ${data.changes.length ? '<p class="cl-none cl-foot">“Worth a look” is picked by keywords such as crash, lost, resume and security, leaving out other platforms. It\'s a starting point, not a judgement.</p>' : ''}
+    <div class="sheet-actions">
+      ${old ? `<button class="btn primary block" data-act="restart-outdated">${icon('restart')}Restart outdated (${old})</button>` : ''}
+      <a class="btn block" href="${CLAUDE_CHANGELOG}" target="_blank" rel="noopener">Full changelog</a>
+      <button class="btn block ghost" data-act="sheet-close">Done</button>
+    </div>`);
 }
 
 const findActive = (pid) => state.active && state.active.sessions.find((s) => s.pid === Number(pid));
@@ -882,6 +930,7 @@ async function onClick(e) {
     case 'retry-session': retrySession({ sessionId: el.dataset.id, folder: el.dataset.path }); break;
     case 'retry-trust': retrySession({ sessionId: el.dataset.id, folder: el.dataset.path, pid: Number(el.dataset.pid) || undefined, trust: true }); break;
     case 'pending-retry': pendingRetry(el.dataset.pid); break;
+    case 'changelog': sheetChangelog(); break;
     case 'restart-outdated': sheetRestartOutdated(); break;
     case 'restart-outdated-go': restartOutdatedGo(); break;
     case 'sheet-close': closeSheet(); break;

@@ -14,10 +14,12 @@ import * as tx from './lib/transcripts.js';
 import * as actions from './lib/actions.js';
 import { installedVersion } from './lib/active.js';
 import { isTrusted } from './lib/trust.js';
+import { createChangelog, recentChanges } from './lib/changelog.js';
 
 const COOKIE = 'sd_session';
 const auth = new AuthStore(cfg.AUTH_FILE, { firstPinFile: cfg.FIRST_PIN_FILE });
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const changelog = createChangelog({ localFile: cfg.CLAUDE_CHANGELOG, log });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -262,6 +264,12 @@ const api = {
   },
 
   'GET /api/active': async () => ({ ...actions.overview(), desktop: desktopStatus(), now: Date.now() }),
+
+  'GET /api/changelog': async () => {
+    const { installedVersion: installed, sessions } = actions.active();
+    const { versions, behind } = await changelog.load(installed);
+    return { installedVersion: installed, behind, changes: recentChanges(versions, sessions.map((s) => s.version), installed) };
+  },
 
   'POST /api/launch': async (req) => {
     const b = await readJson(req);

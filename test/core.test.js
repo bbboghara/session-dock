@@ -11,6 +11,7 @@ import { AuthStore, hashPin, verifyPin, pinProblem, setPinFile } from '../lib/au
 import { acceptTrust, gitRepo, isTrusted, trustMenuKey } from '../lib/trust.js';
 import { listActive, listPending, managedWindow } from '../lib/active.js';
 import { cleanName } from '../lib/actions.js';
+import { CHANGELOG_URL, createChangelog, isNotable, parseChangelog, recentChanges } from '../lib/changelog.js';
 import { compareVersions, versionFromPath } from '../lib/util.js';
 import { claudeEnv, findDesktop, openWindow, parseManagerEnv, pickTerminal, repairBus, TERMINALS } from '../lib/desktop.js';
 
@@ -658,6 +659,107 @@ test('session files only count under their own process ID, and script-run Claude
   }
 });
 
+// ---------- what's new ----------
+const CHANGES = `# Changelog
+
+## 2.1.3
+
+- Fixed a crash when resuming
+- [VSCode] Fixed a crash in the sidebar
+continued on a second line
+
+## 2.1.2
+
+- Added a thing
+
+## Not a version
+
+- Ignored
+
+## [2.1.1]
+
+- Fixed sessions losing work
+`;
+
+test('the changelog is split into versions, and wrapped lines stay with their item', () => {
+  assert.deepEqual(parseChangelog(CHANGES), [
+    { version: '2.1.3', items: ['Fixed a crash when resuming', '[VSCode] Fixed a crash in the sidebar continued on a second line'] },
+    { version: '2.1.2', items: ['Added a thing'] },
+    { version: '2.1.1', items: ['Fixed sessions losing work'] },
+  ]);
+  assert.deepEqual(parseChangelog('nothing useful'), []);
+});
+
+test('the shortlist picks what can matter to a long-running session on Linux', () => {
+  for (const yes of ['Fixed `--continue` sometimes losing the earlier conversation', 'Fixed a crash on startup', '[Remote Control] Fixed a reconnect failure', 'Security: tightened a check', 'Fixed shell commands being left running on macOS and Linux after a restart']) {
+    assert.ok(isNotable(yes), yes);
+  }
+  for (const no of ['Added a new theme', '[VSCode] Fixed a crash in the sidebar', '[Cloud sessions] Fixed a hang', 'Windows: fixed a crash', 'Fixed `claude -p --resume` losing a call', 'Fixed macOS sessions stalling', 'Changed the prompt colours']) {
+    assert.ok(!isNotable(no), no);
+  }
+});
+
+test('the changelog comes from the local copy, and is fetched only when that is behind', async () => {
+  const dir = tmp();
+  const localFile = path.join(dir, 'changelog.md');
+  fs.writeFileSync(localFile, CHANGES);
+  const urls = [];
+  let now = 1_000_000;
+  let answer = () => ({ ok: true, headers: new Map(), text: async () => `## 2.1.4\n\n- Fixed a hang\n\n${CHANGES}` });
+  const log = createChangelog({ localFile, now: () => now, fetchFn: async (url) => { urls.push(url); return answer(); } });
+
+  let r = await log.load('2.1.3');
+  assert.equal(r.versions[0].version, '2.1.3');
+  assert.equal(r.behind, false);
+  assert.deepEqual(urls, [], 'no outside request when the local copy has the installed version');
+  r = await log.load(null);
+  assert.deepEqual(urls, [], 'nor when the installed version is unknown');
+
+  answer = () => { throw new Error('offline'); };
+  r = await log.load('2.1.4');
+  assert.equal(urls[0], CHANGELOG_URL);
+  assert.equal(r.versions[0].version, '2.1.3', 'a failed fetch falls back to the local copy');
+  assert.equal(r.behind, true);
+  await log.load('2.1.4');
+  assert.equal(urls.length, 1, 'it does not ask again straight away');
+
+  now += 31 * 60_000;
+  answer = () => ({ ok: false, status: 500, headers: new Map() });
+  assert.equal((await log.load('2.1.4')).behind, true);
+  assert.equal(urls.length, 2, 'it tries again after a while');
+
+  now += 31 * 60_000;
+  answer = () => ({ ok: true, headers: new Map([['content-length', String(9 * 1024 * 1024)]]), text: async () => '## 9.9.9\n- huge' });
+  assert.equal((await log.load('2.1.4')).versions[0].version, '2.1.3', 'an oversized answer is ignored');
+
+  now += 31 * 60_000;
+  answer = () => ({ ok: true, headers: new Map(), text: async () => `## 2.1.4\n\n- Fixed a hang\n\n${CHANGES}` });
+  r = await log.load('2.1.4');
+  assert.equal(r.versions[0].version, '2.1.4');
+  assert.equal(r.behind, false);
+  const count = urls.length;
+  await log.load('2.1.4');
+  assert.equal(urls.length, count, 'a good copy is kept in memory');
+
+  fs.rmSync(localFile);
+  assert.equal((await createChangelog({ localFile, fetchFn: async () => answer() }).load(null)).versions[0].version, '2.1.4', 'no local copy: fetched');
+});
+
+test('recent changes: the last few versions, and everything running sessions lack', () => {
+  const versions = [];
+  for (let i = 20; i >= 1; i--) versions.push({ version: `2.1.${i}`, items: [`Fixed a crash in ${i}`] });
+  versions.unshift({ version: '2.1.21', items: ['Not installed yet'] });
+  let r = recentChanges(versions, ['2.1.20', '2.1.20'], '2.1.20');
+  assert.deepEqual(r.map((v) => v.version), ['2.1.20', '2.1.19', '2.1.18', '2.1.17', '2.1.16']);
+  assert.equal(r[0].missing, 0);
+  assert.equal(r[0].items[0].notable, true);
+  r = recentChanges(versions, ['2.1.20', '2.1.13', null], '2.1.20');
+  assert.deepEqual(r.map((v) => v.version), ['2.1.20', '2.1.19', '2.1.18', '2.1.17', '2.1.16', '2.1.15', '2.1.14']);
+  assert.equal(r[0].missing, 1);
+  assert.equal(recentChanges(versions, ['2.1.1'], '2.1.20').length, 12, 'capped, so the page stays usable');
+  assert.equal(recentChanges(versions, [], null)[0].version, '2.1.21', 'installed version unknown: nothing filtered out');
+});
+
 // ---------- the server itself ----------
 async function startServer(dir, env = {}) {
   const srv = spawn(process.execPath, ['server.js'], {
@@ -700,6 +802,29 @@ test('with a temporary PIN, nothing works until you set your own', async () => {
     assert.ok(!fs.existsSync(path.join(dir, 'data', 'first-run-pin.txt')));
     // From here on, changing the PIN takes the current one.
     assert.equal((await post('pin', { newPin: '571946' }, cookie)).status, 400);
+  } finally {
+    srv.removeAllListeners('exit');
+    srv.kill();
+  }
+});
+
+test('the changelog page data needs a sign-in, and works from the local copy', async () => {
+  const dir = tmp();
+  const config = path.join(dir, 'claude');
+  fs.mkdirSync(path.join(config, 'cache'), { recursive: true });
+  fs.writeFileSync(path.join(config, 'cache', 'changelog.md'), CHANGES);
+  const { srv, port } = await startServer(dir, { CLAUDE_CONFIG_DIR: config, SD_CLAUDE_BIN: path.join(dir, 'no-such-claude') });
+  try {
+    const url = `http://127.0.0.1:${port}/api`;
+    const post = (p, body, cookie) => fetch(`${url}/${p}`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });
+    assert.equal((await fetch(`${url}/changelog`)).status, 401);
+    const pin = fs.readFileSync(path.join(dir, 'data', 'first-run-pin.txt'), 'utf8').trim();
+    const cookie = (await post('login', { pin })).headers.get('set-cookie').split(';')[0];
+    await post('pin', { newPin: '482913' }, cookie);
+    const data = await fetch(`${url}/changelog`, { headers: { cookie } }).then((r) => r.json());
+    assert.deepEqual(data.changes.map((v) => v.version), ['2.1.3', '2.1.2', '2.1.1']);
+    assert.equal(data.behind, false);
+    assert.equal(data.changes[0].items[0].notable, true);
   } finally {
     srv.removeAllListeners('exit');
     srv.kill();

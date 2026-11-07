@@ -16,6 +16,7 @@ Claude Code sessions run on a computer, but you don't always sit in front of it.
 - **Resume:** pick a saved conversation from the folder's history, newest first. Short (two messages or fewer) and script-started sessions go in a separate "Other sessions" list.
 - **Running:** see every interactive Claude on the machine: folder, version, idle / working / waiting, Remote Control, window.
 - **Restart:** restart an idle session on the newest Claude Code, for example after an update. It resumes the same conversation **in the same window**. **Restart outdated** does all idle outdated sessions at once.
+- **What's new:** read what changed in recent Claude Code versions and see which of your sessions don't have those changes yet, so you can decide whether to restart now or let them wait.
 - **Close:** stop a session. The conversation stays saved.
 
 The windows are ordinary terminal windows on your desktop, not hidden background processes. You can walk up to the computer, or connect with Remote Desktop, and keep typing in them.
@@ -32,6 +33,7 @@ The windows are ordinary terminal windows on your desktop, not hidden background
   - Paths can't leave the folder you allow.
 - **New folders.** Claude asks "Do you trust this folder?" the first time it runs somewhere new, and that question blocks Remote Control. If you approve it in Session Dock, it answers Claude's own question in a hidden `tmux` pane, reading the screen rather than pressing keys blindly, then opens the real window. Folders inside a trusted folder are trusted already, **except git repositories**: Claude looks for trust only up to the top of the repository, so a folder asks again the first time Claude starts after `git init`. Session Dock checks this before it stops anything. Claude never saves the answer for your home folder itself, so sessions start in folders inside it.
 - **Sessions that don't come back.** A Claude that hasn't registered after 20 seconds shows as **Not started** on the Running tab, usually because it's waiting for an answer in its window. **Retry** restarts it in the same window. A Claude that stops with an error shows there too, with its exit code, so you can retry or close the window from your phone. **Restart outdated** offers Retry on each session that failed.
+- **What's new.** Shows the last five Claude Code versions, plus any older ones a running session still lacks, marked with how many sessions don't have each. A recent version can list over 100 changes, so each starts with a short "Worth a look" list and keeps the rest one tap away. That list is a keyword match (crash, lost, resume, security and so on, leaving out other platforms), so it's a starting point for deciding whether to restart now or wait, not a judgement.
 
 No dependencies: plain Node.js, a static page and a shell script.
 
@@ -115,7 +117,8 @@ Session Dock can start programs on your computer, so treat it like SSH access:
   - Changes must be JSON from the page's own origin.
   - The page uses a strict Content Security Policy with no inline scripts.
   - Every path is resolved, symlinks included, and must stay inside `SD_ROOT`.
-- **No access to your Claude account.** Session Dock doesn't use your Claude login and never talks to Anthropic. It reads Claude's session files, saved conversations and the folder-trust list in `~/.claude.json`, and it starts and stops the `claude` program. Claude itself handles Remote Control.
+- **No access to your Claude account.** Session Dock doesn't use your Claude login and never talks to Anthropic. It reads Claude's session files, saved conversations, its copy of the changelog and the folder-trust list in `~/.claude.json`, and it starts and stops the `claude` program. Claude itself handles Remote Control.
+- **One outside request.** **What's new** reads Claude's own copy of its changelog. If that copy doesn't have the installed version yet, Session Dock fetches the public `CHANGELOG.md` from GitHub. Nothing about you or your sessions is sent. It makes no other outside requests.
 
 Found a security problem? Please use **Report a vulnerability** on the repository's Security tab rather than a public issue.
 
@@ -125,13 +128,14 @@ Found a security problem? Please use **Report a vulnerability** on the repositor
 - **Window doesn't appear:** run `journalctl --user -n 50`. Try another terminal with `SD_TERMINAL`. Settings → Status shows the detected desktop and terminal.
 - **Claude stops as soon as the window opens:** the Running tab shows its exit code, and the window shows why. If `claude` isn't found, it was probably installed with npm or a version manager: run `./install.sh`, which prints the `SD_CLAUDE_BIN` line to add to `.env`.
 - **Remote Control doesn't connect:** look at the window. It needs a claude.ai plan login, and an `ANTHROPIC_API_KEY` in your desktop's environment takes precedence over that login. See [Claude's troubleshooting](https://code.claude.com/docs/en/remote-control#troubleshooting).
+- **What's new says the notes aren't available yet:** Claude's own copy doesn't have that version and GitHub couldn't be reached, or the changelog has no entry for it yet. Session Dock tries again after 30 minutes, and the sheet links to the full changelog.
 - **Logs:** `journalctl --user -u session-dock -f`. Open windows: `systemctl --user list-units 'sd-win-*'`.
 - **"Cross-site request blocked" behind a reverse proxy:** the proxy has to pass the original `Host` header through. Tailscale Serve already does.
 - **Forgot the PIN:** run `./install.sh --reset-pin` on the computer. It asks for a new one and signs out every device.
 
 ## Limitations
 
-- Session Dock relies on Claude Code's **local files and command-line flags**: `~/.claude/sessions/*.json`, the conversation files, and `--resume`, `--session-id`, `--name` and `--remote-control`. Apart from the flags, these aren't an official interface, and a Claude Code update could change them. If something breaks after an update, please open an issue.
+- Session Dock relies on Claude Code's **local files and command-line flags**: `~/.claude/sessions/*.json`, the conversation files, the changelog's format, and `--resume`, `--session-id`, `--name` and `--remote-control`. Apart from the flags, these aren't an official interface, and a Claude Code update could change them. If something breaks after an update, please open an issue.
 - Folders whose names differ only in punctuation (`my app` and `my_app`) share one Claude history folder. Session Dock sorts the conversations by their real folder, but renaming such a folder is best done on the computer.
 - Linux only, and it needs a logged-in desktop.
 
@@ -141,7 +145,7 @@ Found a security problem? Please use **Report a vulnerability** on the repositor
 pnpm test        # or: node --test
 ```
 
-The code is in `lib/`: `actions.js` (launch, restart, close), `active.js` (running sessions), `desktop.js` (desktop and terminals), `transcripts.js` (saved conversations), `trust.js`, `auth.js` and `folders.js`. The UI is `public/app.js`, with no framework and no build step.
+The code is in `lib/`: `actions.js` (launch, restart, close), `active.js` (running sessions), `desktop.js` (desktop and terminals), `transcripts.js` (saved conversations), `changelog.js`, `trust.js`, `auth.js` and `folders.js`. The UI is `public/app.js`, with no framework and no build step.
 
 ## License
 
