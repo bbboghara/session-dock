@@ -705,7 +705,7 @@ test('the changelog comes from the local copy, and is fetched only when that is 
   fs.writeFileSync(localFile, CHANGES);
   const urls = [];
   let now = 1_000_000;
-  let answer = () => ({ ok: true, headers: new Map(), text: async () => `## 2.1.4\n\n- Fixed a hang\n\n${CHANGES}` });
+  let answer = () => new Response(`## 2.1.4\n\n- Fixed a hang\n\n${CHANGES}`);
   const log = createChangelog({ localFile, now: () => now, fetchFn: async (url) => { urls.push(url); return answer(); } });
 
   let r = await log.load('2.1.3');
@@ -724,16 +724,28 @@ test('the changelog comes from the local copy, and is fetched only when that is 
   assert.equal(urls.length, 1, 'it does not ask again straight away');
 
   now += 31 * 60_000;
-  answer = () => ({ ok: false, status: 500, headers: new Map() });
+  answer = () => new Response('', { status: 500 });
   assert.equal((await log.load('2.1.4')).behind, true);
   assert.equal(urls.length, 2, 'it tries again after a while');
 
   now += 31 * 60_000;
-  answer = () => ({ ok: true, headers: new Map([['content-length', String(9 * 1024 * 1024)]]), text: async () => '## 9.9.9\n- huge' });
-  assert.equal((await log.load('2.1.4')).versions[0].version, '2.1.3', 'an oversized answer is ignored');
+  answer = () => new Response('## 9.9.9\n- huge', { headers: { 'content-length': String(9 * 1024 * 1024) } });
+  assert.equal((await log.load('2.1.4')).versions[0].version, '2.1.3', 'an answer that says it is oversized is ignored');
+
+  // No Content-Length, and a body that never ends: reading has to stop by itself.
+  now += 31 * 60_000;
+  let sent = 0;
+  let cancelled = false;
+  answer = () => new Response(new ReadableStream({
+    pull(c) { sent += 1; c.enqueue(new Uint8Array(1024 * 1024).fill(45)); },
+    cancel() { cancelled = true; },
+  }));
+  assert.equal((await log.load('2.1.4')).versions[0].version, '2.1.3', 'an endless answer is ignored');
+  assert.ok(cancelled, 'the download is cancelled');
+  assert.ok(sent <= 12, `reading stops near the limit (read ${sent} MiB)`);
 
   now += 31 * 60_000;
-  answer = () => ({ ok: true, headers: new Map(), text: async () => `## 2.1.4\n\n- Fixed a hang\n\n${CHANGES}` });
+  answer = () => new Response(`## 2.1.4\n\n- Fixed a hang\n\n${CHANGES}`);
   r = await log.load('2.1.4');
   assert.equal(r.versions[0].version, '2.1.4');
   assert.equal(r.behind, false);
